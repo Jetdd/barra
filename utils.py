@@ -1,41 +1,28 @@
 '''
 Author: Jet Deng
-Date: 2023-11-27 14:15:20
-LastEditTime: 2023-11-27 16:17:00
-Description: DATA FEATCH FUNCTIONS
+Date: 2023-11-27 17:45:42
+LastEditTime: 2023-11-27 17:48:18
+Description: UTILS
 '''
-from config import main_path, rq_account, rq_password
-import pandas as pd
-import rqdatac as rq
-rq.init(rq_account, rq_password)
-
-def get_close(tp: str) -> pd.DataFrame:
-    """根据品种得到Concated DataFrame of the CLOSE
+from config import dominant_path, contracts_path
+from my_tools import my_rq_tools
+def get_contracts(tp: str) -> None:
+    """保存主力合约列表和所有当日可交易合约列表
 
     Args:
-        tp (str): _description_
-
-    Returns:
-        pd.DataFrame: columns=contracts, index=datetime, values=close
+        tp (str): 品种名
     """
     
-    read_path = main_path / f"{tp}.pkl"
-    
-    df = pd.read_pickle(read_path)
-    df = df.reset_index()
-    new_df = pd.pivot_table(data=df, index='date', columns='order_book_id', values='close')
-    
-    return new_df
+    dominant_df = my_rq_tools.get_dominant(tp=tp)  # 获取主力序列
+    contracts_df = my_rq_tools.get_contracts(tp=tp).dropna(
+        axis=0, how="all"
+    )  # 得到当日所有可交易的合约
 
-
-def get_template(tp: str) -> pd.DataFrame:
-    """根据品种从米筐动态获得当日可交易合约列表, 通过主力合约筛选掉近月到期合约, 再将可交易合约组成RMF (BARRA COM2) 矩阵
-
-    Args:
-        tp (str): _description_
-
-    Returns:
-        pd.DataFrame: columns=[rmf_1, rmf_2, ..., rmf_10], index=date, values=contract
-    """
+    dominant_df.to_csv(dominant_path / "f{tp}.csv")
+    contracts_df.to_csv(contracts_path / "f{tp}.csv")
     
+    print(f"{tp} saved complete")
     
+
+if __name__ == "__main__":
+    pass

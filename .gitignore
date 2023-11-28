@@ -1,2 +1,5 @@
 # Ignore config file
 config
+
+# Ignore contracts
+saved_contracts/

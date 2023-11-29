@@ -1,0 +1,81 @@
+"""
+Author: Jet Deng
+Date: 2023-11-28 17:00:08
+LastEditTime: 2023-11-29 09:56:48
+Description: PCA Modeling
+"""
+from typing import Any
+import pandas as pd
+import numpy as np
+from sklearn.decomposition import PCA
+
+
+class preprocess:
+    """BARRA COM2 removes the outliers that are 10 larger than 10 stds
+    and replace those between 3 stds to 10 stds with 3 stds
+    """
+
+    def __init__(self, rmf_df, threshold, window, **kwargs) -> None:
+        self.rmf_df = rmf_df
+        self.threshold = threshold
+        self.window = window
+        self.ret_type = kwargs.get("ret_type", "std")
+        self.res = pd.DataFrame()
+
+    def rolling_winsorize(self) -> pd.DataFrame:
+        """
+        Returns:
+            pd.DataFrame: winsorized rmf_ret, columns = [rmf_1, ..., rmf_n]
+        """
+        for col in self.rmf_df.columns:
+            series = self.rmf_df[col].copy()
+
+            upper = (
+                series.rolling(window=self.window).mean()
+                + self.threshold * series.rolling(window=self.window).std()
+            )
+            lower = (
+                series.rolling(window=self.window).mean()
+                - self.threshold * series.rolling(window=self.window).std()
+            )
+            if self.ret_type == "nan":
+                series[series < lower] = np.nan
+                series[series > upper] = np.nan
+            else:
+                series[series < lower] = lower
+                series[series > upper] = upper
+            self.res[col] = series
+        return self.res
+
+    def rolling_norm(self) -> pd.DataFrame:
+        """ROLLING NORM MATRIX
+        Returns:
+            pd.DataFrame: normed rmf_df
+        """
+        for col in self.res:
+            df = self.res[col]
+            _mean = df.rolling(window=self.window).mean()
+            _std = df.rolling(window=self.window).std()
+            normed_df = (df - _mean) / _std
+            self.res[col] = normed_df
+        return self.res
+
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        self.rolling_winsorize()
+        self.rolling_norm()
+        return self.res.dropna()
+
+
+def pca_model(rmf_df: pd.DataFrame) -> pd.DataFrame:
+    """PCA Decomposition
+
+    Args:
+        rmf_df (pd.DataFrame): the preprocessed rmf_df
+
+    Returns:
+        pd.DataFrame: The risk factors
+    """
+    model = PCA()
+    model.fit(rmf_df)
+    
+    return model

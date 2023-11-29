@@ -8,9 +8,9 @@ from typing import Any
 import pandas as pd
 import numpy as np
 from sklearn.decomposition import PCA
+from dataclasses import dataclass
 
-
-class preprocess:
+class Preprocess:
     """BARRA COM2 removes the outliers that are 10 larger than 10 stds
     and replace those between 3 stds to 10 stds with 3 stds
     """
@@ -66,16 +66,36 @@ class preprocess:
         return self.res.dropna()
 
 
-def pca_model(rmf_df: pd.DataFrame) -> pd.DataFrame:
-    """PCA Decomposition
 
-    Args:
-        rmf_df (pd.DataFrame): the preprocessed rmf_df
 
-    Returns:
-        pd.DataFrame: The risk factors
-    """
-    model = PCA()
-    model.fit(rmf_df)
+@dataclass
+class Report:
+    n_components: int
+    factors: np.array
+    explained_variance_ratio: np.array
     
-    return model
+class PCAModel:
+    def __init__(self, rmf_df: pd.DataFrame, n_components: int) -> None:
+        self.rmf_df = rmf_df
+        self.n_components = n_components
+        self.factors = None
+        self.n_components = None
+        self.explained_variance_ratio = None
+        
+    def _model(self):
+        """PCA Modeling
+        """
+        model = PCA(n_components=self.n_components,)
+        self.factors = model.fit_transform(self.rmf_df)
+        self.n_components = model.n_components_
+        self.explained_variance_ratio = model.explained_variance_ratio_
+    
+    def __call__(self, *args: Any, **kwds: Any) -> Any:
+        self._model()
+        res = Report(
+            n_components=self.n_components,
+            factors=self.factors,
+            explained_variance_ratio=self.explained_variance_ratio,
+        )
+        
+        return res

@@ -65,7 +65,7 @@ def get_contracts_template(tp: str) -> pd.DataFrame:
     return template.iloc[:-1]  # 用来对齐价格数据, 价格数据暂未更新到最后一天
 
 
-def make_rmf(tp: str) -> pd.DataFrame:
+def make_rmf_price(tp: str) -> pd.DataFrame:
     """制作RMF矩阵, 将TEMPLATE填充CLOSE价格, 并做换月平滑
 
     Args:
@@ -116,6 +116,63 @@ def make_rmf(tp: str) -> pd.DataFrame:
             ) / 5 * incoming_prices
 
     return rmf_df
+
+
+def make_rmf_ret(tp: str) -> pd.DataFrame:
+    """制作RMF矩阵, 将TEMPLATE填充CLOSE价格, 并做换月平滑
+
+    Args:
+        tp (str): 品种名
+
+    Returns:
+        pd.DataFrame: columns=[rmf_1, ..., rmf_10], values=smoothed_close, index=date
+    """
+    template = get_contracts_template(tp=tp)
+    close_df = get_close(tp=tp)
+
+    # Mapping close prices
+    dfs = []
+    for col in template.columns:
+        contract_series = template[col]
+        mapped_close_prices = map_close_prices(
+            contract_series=contract_series, close_price_df=close_df
+        )
+        dfs.append(mapped_close_prices)
+
+    rmf_df = pd.concat(dfs, axis=1)
+    rmf_df = rmf_df.dropna(axis=1)  # 去除有nan值的rmf列
+    rmf_df.columns = [f"rmf_{i+1}" for i in range(len(rmf_df.columns))]
+
+    rmf_ret = rmf_df / rmf_df.shift(1) - 1  # 计算RMF returns
+
+    # Smoothing ret
+    # 平滑规则, 按照前一天的权重对第二天ret进行平滑, 权重计算方式类似make_rmf_price
+    ret_df = close_df / close_df.shift(1) - 1  # 后续将close_df替换为ret_df, 用来map
+    for col in rmf_ret.columns:
+        # 合约进行换月切换的时候, 与上面函数不同, 今天为新合约, 方便后续将weight 与 ret对应
+        switch_index = (
+            np.where(template[col] != template[col].shift(1))[0]
+        )[1:]  # 从第一个之后开始取, 因为shift导致第一个是0
+        
+
+        # 循环平滑
+        for i in range(4):
+            prev_i = switch_index - i  # 切换前i天, 新合约切换前1天也就是i=1
+            outcoming_contracts = template[col].shift(i+1)[prev_i]  # 旧合约
+            incoming_contracts = template[col][
+                prev_i
+            ]  # 新合约在换月前i天, index需要往前i+1天
+            outcoming_ret = map_close_prices(
+                contract_series=outcoming_contracts, close_price_df=ret_df
+            )
+            incoming_ret = map_close_prices(
+                contract_series=incoming_contracts, close_price_df=ret_df
+            )
+            # Update
+            rmf_ret[col][prev_i] = (i + 1) / 5 * outcoming_ret + (
+                4 - i
+            ) / 5 * incoming_ret
+    return rmf_ret
 
 
 def map_close_prices(

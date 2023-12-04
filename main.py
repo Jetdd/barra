@@ -43,14 +43,14 @@ df
 # temp.isna().sum(axis=0)
 
 
-rolling_res = rolling_pca(
-    tp='AG', lookback_window=240, n_components=3, rolling_method="non-overlap"
-)
+# rolling_res = rolling_pca(
+#     tp='AG', lookback_window=240, n_components=3, rolling_method="non-overlap"
+# )
 
-idx = []
-evr = []
-for k in rolling_res.keys():
-    idx.append(k)
-    evr.append(rolling_res[k].explained_variance_ratio)
-df = pd.DataFrame(evr, index=idx, columns=["Shift", "Twist", "Butterfly"])
-my_plot.my_line_plot(df, title="Explained Variance Ratio")
+# idx = []
+# evr = []
+# for k in rolling_res.keys():
+#     idx.append(k)
+#     evr.append(rolling_res[k].explained_variance_ratio)
+# df = pd.DataFrame(evr, index=idx, columns=["Shift", "Twist", "Butterfly"])
+# my_plot.my_line_plot(df, title="Explained Variance Ratio")

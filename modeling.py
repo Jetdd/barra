@@ -23,7 +23,8 @@ class Preprocess:
         self.window = window
         self.ret_type = kwargs.get("ret_type", "std")
         self.res = pd.DataFrame()
-        self.deal_na = kwargs.get("deal_na", False)
+        self.deal_na = kwargs.get("deal_na", True)
+        self.deal_na_method = kwargs.get("deal_na_method", "column")  # row or column
         """If True, drop the na values in the rmf_df, the dates might note be continuous
         """
 
@@ -32,16 +33,18 @@ class Preprocess:
         # First drop na values if the row is all na
         self.res.dropna(axis=0, how="all", inplace=True)
 
-        if self.deal_na:
+        if self.deal_na_method == "row":
             # Then drop na values if the column is all na
             for col in self.res.columns:
                 # If the column has more than 1/3 na values, drop it
                 if self.res[col].isna().sum() >= self.res.shape[0] / 3:
                     self.res.drop(col, axis=1, inplace=True)
             self.res.dropna(axis=0, how="any", inplace=True)
-        else:
+        elif self.deal_na_method == "column":
             # Drop na values if the column has any nan values
             self.res.dropna(axis=1, how="any", inplace=True)
+        else:
+            raise ValueError("deal_na_method must be 'row' or 'column'")
 
     def rolling_winsorize(self) -> pd.DataFrame:
         """
@@ -84,7 +87,8 @@ class Preprocess:
     def __call__(self, *args: Any, **kwds: Any) -> Any:
         self.rolling_winsorize()
         self.rolling_norm()
-        self._deal_na()  # Deal nan for modeling
+        if self.deal_na:
+            self._deal_na()  # Deal nan for modeling
         return self.res
 
 
@@ -128,6 +132,33 @@ class PCAModel:
         return res
 
 
+def rolling_deal_na(normed_rmf: pd.DataFrame, deal_na_method: str) -> pd.DataFrame:
+    """Rolling deal nan for the following rolling PCA
+
+    Args:
+        normed_rmf (pd.DataFrame): normed rmf_df
+        deal_na_method (str): if row: drop the row if any nan; if column: drop the column if any nan
+
+    Returns:
+        pd.DataFrame: normed rmf_df without nan for rollng PCA
+    """
+    # Drop nan values if the row is all nan
+    df = normed_rmf.copy()
+    df.dropna(axis=0, how="all", inplace=True)
+    if deal_na_method == "row":
+        # Then drop na values if the column is all na
+        for col in df.columns:
+            # If the column has more than 1/3 na values, drop it
+            if df[col].isna().sum() >= df.shape[0] / 3:
+                df.drop(col, axis=1, inplace=True)
+        df.dropna(axis=0, how="any", inplace=True)
+    elif deal_na_method == "column":
+        # Drop na values if the column has any nan values
+        df.dropna(axis=1, how="any", inplace=True)
+    else:
+        raise ValueError("deal_na_method must be 'row' or 'column'")
+    return df
+
 def rolling_pca(
     tp: str,
     lookback_window: int,
@@ -146,39 +177,52 @@ def rolling_pca(
         dict: result of rolling PCA
     """
     rmf_df = make_rmf_ret(tp=tp)
-    normed_rmf = Preprocess(rmf_df=rmf_df, threshold=3, window=lookback_window)()
+    normed_rmf = Preprocess(rmf_df=rmf_df, threshold=3, window=lookback_window, deal_na=False)()
     res = {}
-    if rolling_method == "overlap": # overlap: daily rolling
+    if rolling_method == "overlap":  # overlap: daily rolling
         for i in range(len(normed_rmf) - lookback_window + 1):
-            window_data = normed_rmf.iloc[i : i + lookback_window]
-            model = PCA(n_components=n_components)
-            factors = model.fit_transform(window_data)
-            explained_variance_ratio = model.explained_variance_ratio_
-            factor_exposure = model.explained_variance_
-            report = Report(
-                n_components=n_components,
-                factors=factors,
-                explained_variance_ratio=explained_variance_ratio,
-                factor_exposure=factor_exposure,
-            )
+            # If the remaining data is less than the window size, skip
+            try:
+                window_data = normed_rmf.iloc[i : i + lookback_window]
+                filtered_window_data = rolling_deal_na(normed_rmf=window_data, deal_na_method='row')
+                model = PCA(n_components=n_components)
+                factors = model.fit_transform(filtered_window_data)
+                explained_variance_ratio = model.explained_variance_ratio_
+                factor_exposure = model.components_
+                report = Report(
+                    n_components=n_components,
+                    factors=factors,
+                    explained_variance_ratio=explained_variance_ratio,
+                    factor_exposure=factor_exposure,
+                )
 
-            key = window_data.index[-1]  # The last date of the window
-            res[key] = report  # Store the current result
+                key = window_data.index[-1]  # The last date of the window
+                res[key] = report  # Store the current result
+            except Exception as e:
+                print(f"{window_data.index[-1]}: {e}")
+                continue
 
-    elif rolling_method == "non-overlap": # non-overlap: it depends on the window size
+    elif rolling_method == "non-overlap":  # non-overlap: it depends on the window size
         for i in range(0, len(normed_rmf), lookback_window):
-            window_data = normed_rmf.iloc[i : i + lookback_window]
-            model = PCA(n_components=n_components)
-            factors = model.fit_transform(window_data)
-            explained_variance_ratio = model.explained_variance_ratio_
-            factor_exposure = model.explained_variance_
-            report = Report(
-                n_components=n_components,
-                factors=factors,
-                explained_variance_ratio=explained_variance_ratio,
-                factor_exposure=factor_exposure,
-            )
+            # If the remaining data is less than the window size, skip
+            try:
+                window_data = normed_rmf.iloc[i : i + lookback_window]
+                filtered_window_data = rolling_deal_na(normed_rmf=window_data, deal_na_method='row')
+                model = PCA(n_components=n_components)
+                factors = model.fit_transform(filtered_window_data)
+                explained_variance_ratio = model.explained_variance_ratio_
+                factor_exposure = model.components_
+                report = Report(
+                    n_components=n_components,
+                    factors=factors,
+                    explained_variance_ratio=explained_variance_ratio,
+                    factor_exposure=factor_exposure,
+                )
 
-            key = window_data.index[-1]  # The last date of the window
-            res[key] = report  # Store the current result
+                key = window_data.index[-1]  # The last date of the window
+                res[key] = report  # Store the current result
+            except Exception as e:
+                print(f"{window_data.index[-1]}: {e}")
+                continue
     return res
+

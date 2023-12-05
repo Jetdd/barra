@@ -15,6 +15,7 @@ import numpy as np
 @dataclass
 class Report:
     factor_returns: pd.DataFrame
+    factor_exposure: dict
     factor_resid: pd.DataFrame
 
 
@@ -42,6 +43,7 @@ def cross_regression(
     factor_returns = []
     resid = []
     idx = []
+    exposure = {}
     for t in rolling_pca_res.keys():
         # Get the factor exposure at time t
         X_t = rolling_pca_res[t].factor_exposure
@@ -57,15 +59,16 @@ def cross_regression(
         idx.append(t)
         factor_returns.append(f_t)
         resid.append(model.resid.to_list())
-
+        exposure[t] = X_t
+        
     factor_returns = pd.DataFrame(
         factor_returns, index=idx, columns=["Shift", "Twist", "Butterfly"]
     )
     resid = pd.DataFrame(
         resid, index=idx, columns=[f"resid_{i+1}" for i in range(len(resid[-1]))]
     )
-
-    return Report(factor_returns=factor_returns, factor_resid=resid)
+    
+    return Report(factor_returns=factor_returns, factor_exposure=exposure, factor_resid=resid)
 
 
 def compute_r_square(tp: str, factor_resid: pd.DataFrame) -> pd.Series:

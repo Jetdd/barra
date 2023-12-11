@@ -10,8 +10,8 @@ import numpy as np
 
 def compute_covariance_matrix(
     factor_returns: pd.DataFrame,
-    sample_period: int = 540,
-    lbd: int = 90,
+    sample_period: int = 252,
+    lbd: int = 30,
     newey_west: bool = True,
     nlag: int = 10,
 ) -> dict:
@@ -33,10 +33,10 @@ def compute_covariance_matrix(
         # The sampled factor returns
         sampled_factor_returns = factor_returns.values[t : t + sample_period]
         # Initialize the covariance matrix
-        cov_mat = np.ones((3, 3))
+        cov_mat = np.ones((factor_returns.shape[1], factor_returns.shape[1]))
 
         # Used for Newey-West estimator, as it needs the demeaned factor returns
-        demeaned_sampled_factor_returns = sampled_factor_returns.copy() 
+        demeaned_sampled_factor_returns = sampled_factor_returns.copy()
         # Compute the covariance matrix
         for i in range(cov_mat.shape[0]):
             for j in range(cov_mat.shape[1]):
@@ -63,13 +63,15 @@ def compute_covariance_matrix(
 
             # Update the demeaned factor returns
             demeaned_sampled_factor_returns[:, i] -= f_k_bar
-            
+
         # Newey-West scale covariance
         if newey_west:
             gamma_mat = np.zeros(cov_mat.shape)  # K * K matrix
             for i in range(nlag):
-                gamma_i = compute_gamma_i(nlag=i, factor_returns=demeaned_sampled_factor_returns) # Demeaned factor returns
-                bartlett_weight = 1 - (i + 1) / (nlag + 1) # Bartlett weight
+                gamma_i = compute_gamma_i(
+                    nlag=i, factor_returns=demeaned_sampled_factor_returns
+                )  # Demeaned factor returns
+                bartlett_weight = 1 - (i + 1) / (nlag + 1)  # Bartlett weight
                 temp_gamma_sum = bartlett_weight * (
                     gamma_i + gamma_i.T
                 )  # To make sure the matrix is semi-pos definate
@@ -87,8 +89,8 @@ def compute_gamma_i(nlag: int, factor_returns: np.array) -> np.array:
     Gamma_i = 1 / T * sum_{t=1}^{T-i} F_{t} * F_{t+i}^T, where F_t is the factor returns at time t
 
     Args:
-        factor_returns (np.array): (N-nlag, K) matrix
         lag (int): lag
+        factor_returns (np.array): (N-nlag, K) matrix
 
     Returns:
         np.array: F_i K*K matrix
@@ -104,3 +106,81 @@ def compute_gamma_i(nlag: int, factor_returns: np.array) -> np.array:
         gamma_i += temp_gamma  # Update the gamma matrix
     gamma_i /= factor_returns.shape[0]
     return gamma_i
+
+def compute_gamma_sigma_i(nlag: int, factor_resid: np.array) -> np.array:
+    """Given each lag, compute the gamma_i matrix for the specific returns covariance matrix
+
+    Args:
+        nlag (int): lag
+        factor_returns (np.array): specific returns (N-nlag, K) matrix
+
+    Returns:
+        np.array: delta, N*N diagonal matrix
+    """
+    gamma_sigma = np.zeros((factor_resid.shape[1], factor_resid.shape[1]))  # N * N matrix
+    for i in range(factor_resid.shape[0] - nlag):
+        f_i = factor_resid[i + nlag, :]  # Current factor resid
+        f_i_lag = factor_resid[i, :]  # Lagged factor resid
+        for j in range(len(f_i)):
+            diag_element = f_i[j] * f_i_lag[j]  # N * N gamma matrix
+            gamma_sigma[j, j] += diag_element # Only update the diagonal elements, boost up the speed
+    gamma_sigma /= factor_resid.shape[0]
+    return gamma_sigma
+
+def compute_specific_cov(
+    factor_resid: pd.DataFrame,
+    sample_period: int = 252,
+    lbd: float = 30,
+    newey_west: bool = True,
+    nlag: int = 10,
+):
+    """Compute the specific covariance matrix of the factor returns at time t with a sample period and a half life parameters
+
+    Args:
+        factor_resid (pd.DataFrame): factor residuals. index=date, columns=rmf_i (T*N)
+        sample_period (int, optional): sample period Defaults to 252.
+        lbd (float, optional): half life. Defaults to 30.
+        newey_west (bool, optional): Newey-West covariance adjustment. Defaults to True.
+        nlag (int, optional): Newey-West serial correction. Defaults to 10.
+    """
+    cov_mat_dict = {}
+    for t in range(len(factor_resid) - sample_period + 1):
+        idx = factor_resid.index[t + sample_period - 1]
+        # The sampled factor returns
+        sampled_factor_resid = factor_resid.values[t : t + sample_period]
+        # Initialize the covariance matrix
+        cov_mat = np.zeros((factor_resid.shape[1], factor_resid.shape[1]))  # N*N
+        # Used for Newey-West estimator, as it needs the demeaned factor returns
+        demeaned_sampled_factor_resid = sampled_factor_resid.copy()  # N*N
+        for i in range(cov_mat.shape[0]):
+            mu_s = sampled_factor_resid[:, i]
+
+            lbd_array = np.array(
+                [0.5 ** (1 / lbd) ** (sample_period - k) for k in range(sample_period)]
+            )
+            mu_bar = np.matmul(lbd_array, mu_s) / np.sum(lbd_array)
+            # Assume the residuals are independent
+            cov_mat[i, i] = (
+                np.matmul(lbd_array, mu_s - mu_bar) / np.sum(lbd_array)
+            )  # Element-wise product
+
+            # Update the demeaned factor returns
+            demeaned_sampled_factor_resid[:, i] -= mu_bar
+        # Newey-West scale covariance, similar logic as above
+        if newey_west:
+            gamma_mat = np.zeros(cov_mat.shape)  # N * N matrix
+            for i in range(nlag):
+                gamma_i = compute_gamma_sigma_i(
+                    nlag=i, factor_resid=demeaned_sampled_factor_resid
+                )  # Demeaned factor returns
+                bartlett_weight = 1 - (i + 1) / (nlag + 1)  # Bartlett weight
+                temp_gamma_sum = bartlett_weight * (
+                    gamma_i + gamma_i.T
+                )  # To make sure the matrix is semi-pos definate
+                gamma_mat += temp_gamma_sum
+            gamma_mat += cov_mat  # gamma = gamma_0 + sum(gamma_i + gamma_i.T)
+            cov_mat_dict[idx] = gamma_mat  # Save the result
+        else:
+            cov_mat_dict[idx] = cov_mat
+
+    return cov_mat_dict

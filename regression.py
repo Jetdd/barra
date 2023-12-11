@@ -75,10 +75,10 @@ def compute_r_square(tp: str, factor_resid: pd.DataFrame) -> pd.Series:
     """Compute the r-square of the cross-sectional regression given each date
 
     Args:
-        tp (str): _description_
+        tp (str): 品种名
 
     Returns:
-        pd.Series: _description_
+        pd.Series: r-square
     """
     rmf_df = make_rmf_ret(tp=tp)
 

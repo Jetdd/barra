@@ -6,7 +6,7 @@ saved_contracts/
 
 
 # Ignore factor performance
-factor_performance
+factor_performance.py
 
 # Ignore factors json
 *.pkl

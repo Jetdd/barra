@@ -1,3 +1,9 @@
+'''
+Author: Jet Deng
+Date: 2023-12-11 14:47:02
+LastEditTime: 2023-12-27 13:58:34
+Description: 
+'''
 """
 Author: Jet Deng
 Date: 2023-12-11 14:47:02
@@ -90,3 +96,4 @@ for lookback_window in grid_seach_dict.keys():
             bt_res = fa.run()
             print(bt_res.stats)
             plt.show()
+    

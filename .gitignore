@@ -3,3 +3,13 @@ config
 
 # Ignore contracts
 saved_contracts/
+
+
+# Ignore factor performance
+factor_performance
+
+# Ignore factors json
+*.pkl
+
+# Ignore test res
+*.docx
